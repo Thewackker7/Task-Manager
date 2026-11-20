@@ -1,0 +1,41 @@
+# Local development stack: API + PostgreSQL. Start with: docker compose up --build
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-taskuser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-taskpass}
+      POSTGRES_DB: ${POSTGRES_DB:-taskdb}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-taskuser} -d ${POSTGRES_DB:-taskdb}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build: .
+    # Apply pending database migrations, then start the server.
+    # --reload restarts the server when you edit code (development only).
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-taskuser}:${POSTGRES_PASSWORD:-taskpass}@db:5432/${POSTGRES_DB:-taskdb}
+      # Required, 32+ characters. Set a real value in your .env file (see .env.example).
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY must be set in .env - see .env.example}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+      ENVIRONMENT: development
+      CORS_ORIGINS: '["http://localhost:3000"]'
+    volumes:
+      - ./app:/code/app
+      - ./alembic:/code/alembic
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
